@@ -90,6 +90,7 @@ class MultiProcessEvolvingStrategy(EvolvingStrategy):
             ],
             n=RD_AGENT_SETTINGS.multi_proc_n,
         )
+        from rdagent.components.coder.factor_coder.factor import FactorFBWorkspace
 
         for index, target_index in enumerate(to_be_finished_task_index):
             if evo.sub_workspace_list[target_index] is None:
@@ -133,7 +134,7 @@ class FactorEvolvingStrategy(MultiProcessEvolvingStrategy):
                     implement_prompts["evolving_strategy_factor_implementation_v1_system"],
                 )
                 .render(
-                    scenario=self.scen.get_scenario_all_desc(),
+                    scenario=self.scen.get_scenario_all_desc(target_task),
                     queried_former_failed_knowledge=queried_former_failed_knowledge_to_render,
                 )
             )
@@ -226,7 +227,7 @@ class FactorEvolvingStrategyWithGraph(MultiProcessEvolvingStrategy):
                     implement_prompts["evolving_strategy_factor_implementation_v1_system"],
                 )
                 .render(
-                    scenario=self.scen.get_scenario_all_desc(),
+                    scenario=self.scen.get_scenario_all_desc(target_task),
                     queried_former_failed_knowledge=queried_former_failed_knowledge_to_render,
                 )
             )
@@ -250,7 +251,7 @@ class FactorEvolvingStrategyWithGraph(MultiProcessEvolvingStrategy):
                         Environment(undefined=StrictUndefined)
                         .from_string(implement_prompts["evolving_strategy_error_summary_v2_system"])
                         .render(
-                            scenario=self.scen.get_scenario_all_desc(),
+                            scenario=self.scen.get_scenario_all_desc(target_task),
                             factor_information_str=target_factor_task_information,
                             code_and_feedback=queried_former_failed_knowledge_to_render[
                                 -1

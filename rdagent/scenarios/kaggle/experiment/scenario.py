@@ -8,16 +8,31 @@ import pandas as pd
 from jinja2 import Environment, StrictUndefined
 
 from rdagent.app.kaggle.conf import KAGGLE_IMPLEMENT_SETTING
+from rdagent.core.experiment import Task
 from rdagent.core.prompts import Prompts
 from rdagent.core.scenario import Scenario
 from rdagent.oai.llm_utils import APIBackend
 from rdagent.scenarios.kaggle.experiment.kaggle_experiment import KGFactorExperiment
-from rdagent.scenarios.kaggle.kaggle_crawler import crawl_descriptions
+from rdagent.scenarios.kaggle.kaggle_crawler import (
+    crawl_descriptions,
+    leaderboard_scores,
+)
 from rdagent.scenarios.kaggle.knowledge_management.vector_base import (
     KaggleExperienceBase,
 )
 
 prompt_dict = Prompts(file_path=Path(__file__).parent / "prompts.yaml")
+
+KG_ACTION_FEATURE_PROCESSING = "Feature processing"
+KG_ACTION_FEATURE_ENGINEERING = "Feature engineering"
+KG_ACTION_MODEL_FEATURE_SELECTION = "Model feature selection"
+KG_ACTION_MODEL_TUNING = "Model tuning"
+KG_ACTION_LIST = [
+    KG_ACTION_FEATURE_PROCESSING,
+    KG_ACTION_FEATURE_ENGINEERING,
+    KG_ACTION_MODEL_FEATURE_SELECTION,
+    KG_ACTION_MODEL_TUNING,
+]
 
 
 class KGScenario(Scenario):
@@ -35,8 +50,10 @@ class KGScenario(Scenario):
         self.submission_specifications = None
         self.model_output_channel = None
         self.evaluation_desc = None
-        self.evaluation_metric_direction = None
+        self.leaderboard = leaderboard_scores(competition)
+        self.evaluation_metric_direction = float(self.leaderboard[0]) > float(self.leaderboard[-1])
         self.vector_base = None
+        self.mini_case = KAGGLE_IMPLEMENT_SETTING.mini_case
         self._analysis_competition_description()
         self.if_action_choosing_based_on_UCB = KAGGLE_IMPLEMENT_SETTING.if_action_choosing_based_on_UCB
         self.if_using_graph_rag = KAGGLE_IMPLEMENT_SETTING.if_using_graph_rag
@@ -44,13 +61,20 @@ class KGScenario(Scenario):
 
         if self.if_using_vector_rag and KAGGLE_IMPLEMENT_SETTING.rag_path:
             self.vector_base = KaggleExperienceBase(KAGGLE_IMPLEMENT_SETTING.rag_path)
-            self.vector_base.path = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S") + "_kaggle_kb.pkl"
+            self.vector_base.path = Path(datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S") + "_kaggle_kb.pkl")
             self.vector_base.dump()
 
         self._output_format = self.output_format
         self._interface = self.interface
         self._simulator = self.simulator
         self._background = self.background
+
+        self.action_counts = dict.fromkeys(KG_ACTION_LIST, 0)
+        self.reward_estimates = {action: 0.0 for action in KG_ACTION_LIST}
+        self.reward_estimates["Model feature selection"] = 0.2
+        self.reward_estimates["Model tuning"] = 1.0
+        self.confidence_parameter = 1.0
+        self.initial_performance = 0.0
 
     def _analysis_competition_description(self):
         sys_prompt = (
@@ -65,6 +89,7 @@ class KGScenario(Scenario):
             .render(
                 competition_descriptions=self.competition_descriptions,
                 raw_data_information=self._source_data,
+                evaluation_metric_direction=self.evaluation_metric_direction,
             )
         )
 
@@ -85,9 +110,6 @@ class KGScenario(Scenario):
         self.model_output_channel = response_json_analysis.get("Submission channel number to each sample", 1)
         self.evaluation_desc = response_json_analysis.get(
             "Evaluation Description", "No evaluation specification provided."
-        )
-        self.evaluation_metric_direction = response_json_analysis.get(
-            "Evaluation Boolean", "No evaluation specification provided."
         )
 
     def get_competition_full_desc(self) -> str:
@@ -202,7 +224,7 @@ The model code should follow the simulator:
 This is the Kaggle scenario for the competition: {self.competition}
 """
 
-    def get_scenario_all_desc(self) -> str:
+    def get_scenario_all_desc(self, task: Task | None = None) -> str:
         return f"""Background of the scenario:
 {self._background}
 The source dataset you can use to generate the features:

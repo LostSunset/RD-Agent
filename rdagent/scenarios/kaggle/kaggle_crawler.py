@@ -87,6 +87,15 @@ def download_data(competition: str, local_path: str = "/data/userdata/share/kagg
             zip_ref.extractall(data_path)
 
 
+def leaderboard_scores(competition: str) -> list[float]:
+    from kaggle.api.kaggle_api_extended import KaggleApi
+
+    api = KaggleApi()
+    api.authenticate()
+    ll = api.competition_leaderboard_view(competition)
+    return [float(x.score) for x in ll]
+
+
 def download_notebooks(
     competition: str, local_path: str = "/data/userdata/share/kaggle/notebooks", num: int = 15
 ) -> None:
@@ -117,13 +126,13 @@ def notebook_to_knowledge(notebook_text: str) -> str:
 
     sys_prompt = (
         Environment(undefined=StrictUndefined)
-        .from_string(prompt_dict["gen_knowledge_from_code_DSAgent"]["system"])
+        .from_string(prompt_dict["gen_knowledge_from_code_mini_case"]["system"])
         .render()
     )
 
     user_prompt = (
         Environment(undefined=StrictUndefined)
-        .from_string(prompt_dict["gen_knowledge_from_code_DSAgent"]["user"])
+        .from_string(prompt_dict["gen_knowledge_from_code_mini_case"]["user"])
         .render(notebook=notebook_text)
     )
 
@@ -203,7 +212,7 @@ def collect_knowledge_texts(local_path: str = "/data/userdata/share/kaggle") -> 
 
 # %%
 if __name__ == "__main__":
-    dsagent_cs = [
+    mini_case_cs = [
         "feedback-prize-english-language-learning",
         "playground-series-s3e11",
         "playground-series-s3e14",
@@ -254,15 +263,18 @@ if __name__ == "__main__":
         "facebook-v-predicting-check-ins",
     ]
 
-    all_cs = dsagent_cs + other_cs
-    for c in all_cs:
-        convert_notebooks_to_text(c)
-    exit()
-    from kaggle.api.kaggle_api_extended import KaggleApi
+    # all_cs = mini_case_cs + other_cs
+    # for c in all_cs:
+    #     convert_notebooks_to_text(c)
+    # exit()
+    # from kaggle.api.kaggle_api_extended import KaggleApi
 
-    api = KaggleApi()
-    api.authenticate()
-    cs = api.competitions_list()
-    for c in cs:
-        name = c.ref.split("/")[-1]
-        crawl_descriptions(name)
+    # api = KaggleApi()
+    # api.authenticate()
+    # cs = api.competitions_list()
+    # for c in cs:
+    #     name = c.ref.split("/")[-1]
+    #     crawl_descriptions(name)
+    res = leaderboard_scores(competition="playground-series-s4e8")
+
+# %%

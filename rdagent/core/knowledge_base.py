@@ -13,9 +13,11 @@ class KnowledgeBase:
     def load(self) -> None:
         if self.path is not None and self.path.exists():
             with self.path.open("rb") as f:
-                self.__dict__.update(
-                    pickle.load(f),
-                )  # TODO: because we need to align with init function, we need a less hacky way to do this
+                loaded = pickle.load(f)
+                if isinstance(loaded, dict):
+                    self.__dict__.update(loaded)
+                else:
+                    self.__dict__.update(loaded.__dict__)
 
     def dump(self) -> None:
         if self.path is not None:
