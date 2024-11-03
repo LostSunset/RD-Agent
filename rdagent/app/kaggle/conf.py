@@ -63,15 +63,13 @@ class KaggleBasePropSetting(BasePropSetting):
     """Enable advanced graph-based RAG"""
 
     # Conditionally set the knowledge_base based on the use of graph RAG
-    knowledge_base: str = (
-        "rdagent.scenarios.kaggle.knowledge_management.graph.KGKnowledgeGraph" if if_using_graph_rag else ""
-    )
+    knowledge_base: str = ""
     """Knowledge base class, uses 'KGKnowledgeGraph' when advanced graph-based RAG is enabled, otherwise empty."""
 
     knowledge_base_path: str = "kg_graph.pkl"
     """Advanced version of graph-based RAG"""
 
-    auto_submit: bool = True
+    auto_submit: bool = False
     """Automatically upload and submit each experiment result to Kaggle platform"""
 
     mini_case: bool = False
