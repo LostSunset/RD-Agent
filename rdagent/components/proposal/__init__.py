@@ -19,7 +19,6 @@ prompt_dict = Prompts(file_path=Path(__file__).parent / "prompts.yaml")
 
 
 class LLMHypothesisGen(HypothesisGen):
-
     def __init__(self, scen: Scenario):
         super().__init__(scen)
 
@@ -72,7 +71,7 @@ class ModelHypothesisGen(LLMHypothesisGen):
         self.targets = "model tuning"
 
 
-class FactorAndModelHypothesisGen(FactorHypothesisGen):
+class FactorAndModelHypothesisGen(LLMHypothesisGen):
     def __init__(self, scen: Scenario):
         super().__init__(scen)
         self.targets = "feature engineering and model building"

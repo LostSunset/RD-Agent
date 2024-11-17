@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from fea_share_preprocess import preprocess_script
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import mean_absolute_error
 
 # Set random seed for reproducibility
 SEED = 42
@@ -22,7 +22,8 @@ def import_module_from_path(module_name, module_path):
 
 
 # 1) Preprocess the data
-X_train, X_valid, y_train, y_valid, X_test, ids, label_encoder = preprocess_script()
+X_train, X_valid, y_train, y_valid, X_test, ids = preprocess_script()
+mask = X_valid["u_out"] == 0
 
 # 2) Auto feature engineering
 X_train_l, X_valid_l = [], []
@@ -45,11 +46,6 @@ X_train = pd.concat(X_train_l, axis=1, keys=[f"feature_{i}" for i in range(len(X
 X_valid = pd.concat(X_valid_l, axis=1, keys=[f"feature_{i}" for i in range(len(X_valid_l))])
 X_test = pd.concat(X_test_l, axis=1, keys=[f"feature_{i}" for i in range(len(X_test_l))])
 
-print(X_train.shape, X_valid.shape, X_test.shape)
-
-# Handle inf and -inf values
-# X_train, X_valid, X_test = clean_and_impute_data(X_train, X_valid, X_test)
-
 
 model_l = []  # list[tuple[model, predict_func]]
 for f in DIRNAME.glob("model/model*.py"):
@@ -67,21 +63,23 @@ metrics_all = []
 for model, predict_func, select_m in model_l:
     X_valid_selected = select_m.select(X_valid.copy())
     y_valid_pred = predict_func(model, X_valid_selected)
-    accuracy = accuracy_score(y_valid, y_valid_pred)
-    print(f"[{type(model).__name__}] MCC on valid set: {accuracy}")
-    metrics_all.append(accuracy)
+    y_valid_filtered = y_valid[mask]
+    y_valid_pred_filtered = y_valid_pred[mask]
+    mae = mean_absolute_error(y_valid_filtered, y_valid_pred_filtered)
+    print(f"[{type(model).__name__}] MAE on valid set: {mae}")
+    metrics_all.append(mae)
 
 # 5) Save the validation accuracy
-max_index = np.argmax(metrics_all)
-pd.Series(data=[metrics_all[max_index]], index=["multi-class accuracy"]).to_csv("submission_score.csv")
+max_index = np.argmin(metrics_all)
+pd.Series(data=[metrics_all[max_index]], index=["MAE"]).to_csv("submission_score.csv")
 
 # 6) Make predictions on the test set and save them
 X_test_selected = model_l[max_index][2].select(X_test.copy())
-y_test_pred = label_encoder.inverse_transform(model_l[max_index][1](model_l[max_index][0], X_test_selected))
+y_test_pred = model_l[max_index][1](model_l[max_index][0], X_test_selected).flatten() + 1
 
 
 # 7) Submit predictions for the test set
-submission_result = pd.DataFrame(y_test_pred, columns=["Cover_Type"])
-submission_result.insert(0, "Id", ids)
+submission_result = pd.DataFrame(y_test_pred, columns=["pressure"])
+submission_result.insert(0, "id", ids)
 
 submission_result.to_csv("submission.csv", index=False)
