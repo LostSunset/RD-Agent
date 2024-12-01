@@ -14,11 +14,9 @@ from plotly.subplots import make_subplots
 from streamlit import session_state as state
 from streamlit_theme import st_theme
 
-from rdagent.components.coder.factor_coder.CoSTEER.evaluators import (
-    FactorSingleFeedback,
-)
+from rdagent.components.coder.factor_coder.evaluators import FactorSingleFeedback
 from rdagent.components.coder.factor_coder.factor import FactorFBWorkspace, FactorTask
-from rdagent.components.coder.model_coder.CoSTEER.evaluators import ModelCoderFeedback
+from rdagent.components.coder.model_coder.evaluators import ModelSingleFeedback
 from rdagent.components.coder.model_coder.model import ModelFBWorkspace, ModelTask
 from rdagent.core.proposal import Hypothesis, HypothesisFeedback
 from rdagent.core.scenario import Scenario
@@ -63,9 +61,25 @@ QLIB_SELECTED_METRICS = [
 
 SIMILAR_SCENARIOS = (QlibModelScenario, DMModelScenario, QlibFactorScenario, QlibFactorFromReportScenario, KGScenario)
 
+
+def filter_log_folders(main_log_path):
+    """
+    The webpage only displays valid folders.
+    If the __session__ folder exists in a subfolder of the log folder, it is considered a valid folder,
+    otherwise it is considered an invalid folder.
+    """
+    folders = [
+        folder.relative_to(main_log_path)
+        for folder in main_log_path.iterdir()
+        if folder.is_dir() and folder.joinpath("__session__").exists() and folder.joinpath("__session__").is_dir()
+    ]
+    folders = sorted(folders, key=lambda x: x.name)
+    return folders
+
+
 if "log_path" not in state:
     if main_log_path:
-        state.log_path = next(main_log_path.iterdir()).relative_to(main_log_path)
+        state.log_path = filter_log_folders(main_log_path)[0]
     else:
         state.log_path = None
         st.toast(":red[**Please Set Log Path!**]", icon="⚠️")
@@ -256,7 +270,7 @@ def refresh(same_trace: bool = False):
     state.times = defaultdict(lambda: defaultdict(list))
 
 
-def evolving_feedback_window(wsf: FactorSingleFeedback | ModelCoderFeedback):
+def evolving_feedback_window(wsf: FactorSingleFeedback | ModelSingleFeedback):
     if isinstance(wsf, FactorSingleFeedback):
         ffc, efc, cfc, vfc = st.tabs(
             ["**Final Feedback🏁**", "Execution Feedback🖥️", "Code Feedback📄", "Value Feedback🔢"]
@@ -268,8 +282,8 @@ def evolving_feedback_window(wsf: FactorSingleFeedback | ModelCoderFeedback):
         with cfc:
             st.markdown(wsf.code_feedback)
         with vfc:
-            st.markdown(wsf.factor_value_feedback)
-    elif isinstance(wsf, ModelCoderFeedback):
+            st.markdown(wsf.value_feedback)
+    elif isinstance(wsf, ModelSingleFeedback):
         ffc, efc, cfc, msfc, vfc = st.tabs(
             [
                 "**Final Feedback🏁**",
@@ -507,7 +521,7 @@ def research_window():
             # pdf image
             if pim := state.msgs[round]["r.extract_factors_and_implement.load_pdf_screenshot"]:
                 for i in range(min(2, len(pim))):
-                    st.image(pim[i].content, use_column_width=True)
+                    st.image(pim[i].content, use_container_width=True)
 
             # Hypothesis
             if hg := state.msgs[round]["r.hypothesis generation"]:
@@ -528,7 +542,7 @@ def research_window():
             with c1:
                 if pim := state.msgs[round]["r.pdf_image"]:
                     for i in range(len(pim)):
-                        st.image(pim[i].content, use_column_width=True)
+                        st.image(pim[i].content, use_container_width=True)
 
             # loaded model exp
             with c2:
@@ -681,8 +695,7 @@ with st.sidebar:
             if manually:
                 st.text_input("log path", key="log_path", on_change=refresh, label_visibility="collapsed")
             else:
-                folders = [folder.relative_to(main_log_path) for folder in main_log_path.iterdir() if folder.is_dir()]
-                folders = sorted(folders, key=lambda x: x.name)
+                folders = filter_log_folders(main_log_path)
                 st.selectbox(f"**Select from `{main_log_path}`**", folders, key="log_path", on_change=refresh)
         else:
             st.text_input(":blue[**log path**]", key="log_path", on_change=refresh)
@@ -765,7 +778,7 @@ with st.container():
     image_c, scen_c = st.columns([3, 3], vertical_alignment="center")
     with image_c:
         img_path = rfiles("rdagent.log.ui").joinpath("flow.png")
-        st.image(str(img_path), use_column_width=True)
+        st.image(str(img_path), use_container_width=True)
     with scen_c:
         st.header("Scenario Description📖", divider="violet", anchor="_scenario")
         if state.scenario is not None:
