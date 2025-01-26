@@ -60,7 +60,7 @@ class DataScienceRDLoop(RDLoop):
 
     def direct_exp_gen(self, prev_out: dict[str, Any]):
         exp = self.exp_gen.gen(self.trace)
-        logger.log_object(exp, tag="direct_exp_gen")
+        logger.log_object(exp)
 
         # FIXME: this is for LLM debug webapp, remove this when the debugging is done.
         logger.log_object(exp, tag="debug_exp_gen")
@@ -83,14 +83,14 @@ class DataScienceRDLoop(RDLoop):
             else:
                 raise NotImplementedError(f"Unsupported component in DataScienceRDLoop: {exp.hypothesis.component}")
             exp.sub_tasks = []
-        logger.log_object(exp, tag="coding")
+        logger.log_object(exp)
         return exp
 
     def running(self, prev_out: dict[str, Any]):
         exp: DSExperiment = prev_out["coding"]
         if exp.next_component_required() is None:
-            new_exp = self.runner.run(exp)
-            logger.log_object(new_exp, tag="running")
+            new_exp = self.runner.develop(exp)
+            logger.log_object(new_exp)
             return new_exp
         else:
             return exp
@@ -104,7 +104,7 @@ class DataScienceRDLoop(RDLoop):
                 reason=f"{exp.hypothesis.component} is completed.",
                 decision=True,
             )
-        logger.log_object(feedback, tag="feedback")
+        logger.log_object(feedback)
         return feedback
 
     def record(self, prev_out: dict[str, Any]):
@@ -118,6 +118,14 @@ class DataScienceRDLoop(RDLoop):
                     ExperimentFeedback.from_exception(e),
                 )
             )
+            if len(self.trace.hist) >= DS_RD_SETTING.consecutive_errors:
+                trace_exp_next_component_list = [
+                    exp.next_component_required() for exp, _ in self.trace.hist[-DS_RD_SETTING.consecutive_errors :]
+                ]
+                if None not in trace_exp_next_component_list and len(set(trace_exp_next_component_list)) == 1:
+                    logger.error("Consecutive errors reached the limit. Dumping trace.")
+                    logger.log_object(self.trace, tag="trace before restart")
+                    self.trace = DSTrace(scen=self.trace.scen, knowledge_base=self.trace.knowledge_base)
         logger.log_object(self.trace, tag="trace")
         logger.log_object(self.trace.sota_experiment(), tag="SOTA experiment")
 

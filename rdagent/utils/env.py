@@ -134,6 +134,7 @@ class DockerConf(ExtendedBaseSettings):
     default_entry: str  # the entry point of the image
 
     extra_volumes: dict = {}
+    extra_volume_mode: str = "ro"  # by default. only the mount_path should be writable, others are changed to read-only
     # Sometime, we need maintain some extra data for the workspace.
     # And the extra data may be shared and the downloading can be time consuming.
     # So we just want to download it once.
@@ -143,6 +144,8 @@ class DockerConf(ExtendedBaseSettings):
     mem_limit: str | None = "48g"  # Add memory limit attribute
 
     running_timeout_period: int = 3600  # 1 hour
+
+    enable_cache: bool = True  # enable the cache mechanism
 
 
 class QlibDockerConf(DockerConf):
@@ -227,6 +230,7 @@ class MLEBDockerConf(DockerConf):
     mem_limit: str | None = (
         "48g"  # Add memory limit attribute # new-york-city-taxi-fare-prediction may need more memory
     )
+    enable_cache: bool = False
 
 
 # physionet.org/files/mimic-eicu-fiddle-feature/1.0.0/FIDDLE_mimic3
@@ -342,10 +346,10 @@ class DockerEnv(Env[DockerConf]):
             volumns[local_path] = {"bind": self.conf.mount_path, "mode": "rw"}
         if self.conf.extra_volumes is not None:
             for lp, rp in self.conf.extra_volumes.items():
-                volumns[lp] = {"bind": rp, "mode": "rw"}
+                volumns[lp] = {"bind": rp, "mode": self.conf.extra_volume_mode}
         if running_extra_volume is not None:
             for lp, rp in running_extra_volume.items():
-                volumns[lp] = {"bind": rp, "mode": "rw"}
+                volumns[lp] = {"bind": rp, "mode": self.conf.extra_volume_mode}
 
         log_output = ""
 
@@ -458,7 +462,10 @@ class DockerEnv(Env[DockerConf]):
         )
 
         start = time.time()
-        out = self.cached_run(entry_add_timeout, local_path, env, running_extra_volume)
+        if self.conf.enable_cache:
+            out = self.cached_run(entry_add_timeout, local_path, env, running_extra_volume)
+        else:
+            out = self.__run(entry_add_timeout, local_path, env, running_extra_volume, remove_timestamp=False)
         end = time.time()
 
         if end - start + 1 >= self.conf.running_timeout_period:
