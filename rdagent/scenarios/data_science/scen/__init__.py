@@ -95,6 +95,7 @@ def describe_data_folder(folder_path, indent=0, max_files=2, partial_expand_subf
 
     for root, dirs, files in os.walk(folder_path):
         dirs.sort()
+        files.sort()
         if not dirs:
             for file in files:
                 file_path = os.path.join(root, file)
@@ -208,7 +209,7 @@ def describe_data_folder(folder_path, indent=0, max_files=2, partial_expand_subf
                         for tag, value in img.tag_v2.items():
                             tag_name = TiffTags.TAGS_V2.get(tag, f"Unknown Tag {tag}")
                             result.append(" " * (indent + 4) + f"{tag_name}: {value}")
-                if file_type == "json":
+                if file_type in ["json", "txt"]:
                     result.append(" " * (indent + 2) + f"- Content of {file}:")
                     with open(path, "r", encoding="utf-8") as f:
                         for i, line in enumerate(f):

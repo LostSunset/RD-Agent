@@ -11,6 +11,7 @@ import json
 import os
 import pickle
 import re
+import shutil
 import subprocess
 import time
 import uuid
@@ -34,6 +35,7 @@ from rdagent.core.conf import ExtendedBaseSettings, ExtendedSettingsConfigDict
 from rdagent.core.experiment import RD_AGENT_SETTINGS
 from rdagent.log import rdagent_logger as logger
 from rdagent.oai.llm_utils import md5_hash
+from rdagent.utils.workflow import wait_retry
 
 ASpecificBaseModel = TypeVar("ASpecificBaseModel", bound=BaseModel)
 
@@ -313,12 +315,17 @@ class DockerEnv(Env[DockerConf]):
                 [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])] if self.conf.enable_gpu else None
             ),
         }
-        try:
-            client.containers.run(self.conf.image, "nvidia-smi", **gpu_kwargs)
-            logger.info("GPU Devices are available.")
-        except docker.errors.APIError:
-            return {}
-        return gpu_kwargs
+
+        @wait_retry(5, 10)
+        def _f() -> dict:
+            try:
+                client.containers.run(self.conf.image, "nvidia-smi", **gpu_kwargs)
+                logger.info("GPU Devices are available.")
+            except docker.errors.APIError:
+                return {}
+            return gpu_kwargs
+
+        return _f()
 
     def replace_time_info(self, input_string: str) -> str:
         """To remove any time related information from the logs since it will destroy the cache mechanism"""
@@ -410,6 +417,11 @@ class DockerEnv(Env[DockerConf]):
         """
         Unzip a file into a folder, use zipfile instead of subprocess
         """
+        # Clear folder_path before extracting
+        if os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
+        os.makedirs(folder_path)
+
         with zipfile.ZipFile(zip_file_path, "r") as z:
             z.extractall(folder_path)
 
