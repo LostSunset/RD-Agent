@@ -18,7 +18,7 @@ from rdagent.utils import filter_progress_bar
 from rdagent.utils.fmt import shrink_text
 
 if typing.TYPE_CHECKING:
-    from rdagent.core.proposal import ExperimentFeedback, Hypothesis
+    from rdagent.core.proposal import Hypothesis
     from rdagent.utils.env import Env
 
 """
@@ -219,6 +219,13 @@ class FBWorkspace(Workspace):
                 relative_path = file_path.relative_to(folder_path)
                 self.inject_files(**{str(relative_path): file_path.read_text()})
 
+    def inject_code_from_file_dict(self, workspace: FBWorkspace) -> None:
+        """
+        Load the workspace from the file_dict
+        """
+        for name, code in workspace.file_dict.items():
+            self.inject_files(**{name: code})
+
     def copy(self) -> FBWorkspace:
         """
         copy the workspace from the original one
@@ -231,6 +238,13 @@ class FBWorkspace(Workspace):
         """
         shutil.rmtree(self.workspace_path, ignore_errors=True)
         self.file_dict = {}
+
+    def before_execute(self) -> None:
+        """
+        Before executing the code, we need to prepare the workspace and inject code into the workspace.
+        """
+        self.prepare()
+        self.inject_files(**self.file_dict)
 
     def execute(self, env: Env, entry: str) -> str:
         """

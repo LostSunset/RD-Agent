@@ -1,5 +1,5 @@
 import json
-from typing import Literal
+from typing import Dict, Literal
 
 import pandas as pd
 
@@ -212,7 +212,7 @@ class DSExpGen(ExpGen):
 
         resp_dict = json.loads(
             APIBackend().build_messages_and_create_chat_completion(
-                user_prompt=user_prompt, system_prompt=system_prompt, json_mode=True
+                user_prompt=user_prompt, system_prompt=system_prompt, json_mode=True, json_target_type=dict
             )
         )
 
@@ -237,30 +237,23 @@ class DSExpGen(ExpGen):
             last_successful_exp: Last successful experiment or None
             spec_file: Path to specification file if needed
         """
-        former_task_desc = (
-            trace.hist[-1][0].pending_tasks_list[0][0].get_task_information()
-            if len(trace.hist) > 0 and trace.hist[-1][0] is not last_successful_exp
-            else None
-        )
 
-        exp_and_feedback = trace.hist[-1] if len(trace.hist) > 0 else None
-        if (
-            exp_and_feedback
-            and exp_and_feedback[1].exception is not None
-            and (
-                exp_and_feedback[0].pending_tasks_list[0][0].name == component
-                or exp_and_feedback[0].pending_tasks_list[0][0].name.startswith("model_")
-                and component == "Model"
-            )
-        ):  # Assumption: when completing missing component, using component name as task name
-            former_task_desc += f"\n\nYou have tried to implement the same component and got the following exception: \n{exp_and_feedback[1].exception}\n Please try different methods to avoid the same errors and results in an infinite loop"
+        former_tasks_desc = ""
+        if len(trace.hist) > 0:
+            for exp, fb in reversed(trace.hist):
+                if exp is not last_successful_exp:
+                    former_task_desc = exp.pending_tasks_list[0][0].get_task_information()
+                    former_task_desc += f"\n\nYou have tried to implement the same component and got the following exception: \n{fb.exception}\n Please try different methods to avoid the same errors and results in an infinite loop"
+                    former_tasks_desc += former_task_desc
+                else:
+                    break
 
         resp_dict = self._init_task_gen(
             targets=component,
             scenario_desc=scenario_desc,
             spec=last_successful_exp.experiment_workspace.file_dict[spec_file] if spec_file else None,
             task_output_format=T(f".prompts:output_format.{component_prompt_key or component.lower()}").r(),
-            former_task=former_task_desc,
+            former_task=former_tasks_desc if former_tasks_desc else None,
         )
 
         task = task_cls(
@@ -274,7 +267,8 @@ class DSExpGen(ExpGen):
 
         exp = DSExperiment(pending_tasks_list=[[task]], hypothesis=DSHypothesis(component))
         if last_successful_exp:
-            exp.experiment_workspace.inject_code_from_folder(last_successful_exp.experiment_workspace.workspace_path)
+            # exp.experiment_workspace.inject_code_from_folder(last_successful_exp.experiment_workspace.workspace_path)
+            exp.experiment_workspace.inject_code_from_file_dict(last_successful_exp.experiment_workspace)
         return exp
 
     def gen(self, trace: DSTrace) -> DSExperiment:
@@ -371,7 +365,7 @@ class DSExpGen(ExpGen):
 
             resp_dict_component: dict = json.loads(
                 APIBackend().build_messages_and_create_chat_completion(
-                    component_user_prompt, component_sys_prompt, json_mode=True
+                    component_user_prompt, component_sys_prompt, json_mode=True, json_target_type=Dict[str, str]
                 )
             )
 
@@ -423,7 +417,10 @@ class DSExpGen(ExpGen):
                 def _f(user_prompt):
                     resp_dict = json.loads(
                         APIBackend().build_messages_and_create_chat_completion(
-                            user_prompt=user_prompt, system_prompt=system_prompt, json_mode=True
+                            user_prompt=user_prompt,
+                            system_prompt=system_prompt,
+                            json_mode=True,
+                            direct_exp_gen=Dict[str, Dict[str, str]],
                         )
                     )
                     assert "hypothesis_proposal" in resp_dict, "Hypothesis proposal not provided."
@@ -456,7 +453,8 @@ class DSExpGen(ExpGen):
                 hypothesis, task, new_workflow_desc = _f(user_prompt)
 
                 exp = DSExperiment(pending_tasks_list=[[task]], hypothesis=hypothesis)
-                exp.experiment_workspace.inject_code_from_folder(sota_exp.experiment_workspace.workspace_path)
+                # exp.experiment_workspace.inject_code_from_folder(sota_exp.experiment_workspace.workspace_path)
+                exp.experiment_workspace.inject_code_from_file_dict(sota_exp.experiment_workspace)
 
                 if new_workflow_desc != "No update needed":
                     workflow_task = WorkflowTask(
