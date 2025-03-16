@@ -18,7 +18,7 @@ from selenium.webdriver.common.by import By
 from rdagent.app.kaggle.conf import KAGGLE_IMPLEMENT_SETTING
 from rdagent.core.conf import ExtendedBaseSettings
 from rdagent.core.exception import KaggleError
-from rdagent.core.prompts import Prompts
+from rdagent.core.utils import cache_with_pickle
 from rdagent.log import rdagent_logger as logger
 from rdagent.oai.llm_utils import APIBackend
 from rdagent.scenarios.data_science.debug.data import create_debug_data
@@ -114,9 +114,9 @@ def download_data(competition: str, settings: ExtendedBaseSettings = KAGGLE_IMPL
         zipfile_path = f"{local_path}/zip_files"
         zip_competition_path = Path(zipfile_path) / competition
 
-        mleb_env = MLEBDockerEnv()
-        mleb_env.prepare()
         if not zip_competition_path.exists():
+            mleb_env = MLEBDockerEnv()
+            mleb_env.prepare()
             (Path(zipfile_path)).mkdir(parents=True, exist_ok=True)
             mleb_env.run(
                 f"mlebench prepare -c {competition} --data-dir ./zip_files",
@@ -127,6 +127,8 @@ def download_data(competition: str, settings: ExtendedBaseSettings = KAGGLE_IMPL
         if not (Path(local_path) / competition).exists() or list((Path(local_path) / competition).iterdir()) == []:
             (Path(local_path) / competition).mkdir(parents=True, exist_ok=True)
 
+            mleb_env = MLEBDockerEnv()
+            mleb_env.prepare()
             mleb_env.run(f"cp -r ./zip_files/{competition}/prepared/public/* ./{competition}", local_path=local_path)
 
             for zip_path in (Path(local_path) / competition).rglob("*.zip"):
@@ -184,6 +186,7 @@ def unzip_data(unzip_file_path: str, unzip_target_path: str) -> None:
         zip_ref.extractall(unzip_target_path)
 
 
+@cache_with_pickle(hash_func=lambda x: x, force=True)
 def leaderboard_scores(competition: str) -> list[float]:
     from kaggle.api.kaggle_api_extended import KaggleApi
 

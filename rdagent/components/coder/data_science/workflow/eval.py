@@ -10,12 +10,11 @@ from rdagent.components.coder.CoSTEER.evaluators import (
     CoSTEERMultiFeedback,
     CoSTEERSingleFeedback,
 )
+from rdagent.components.coder.data_science.conf import get_ds_env
 from rdagent.core.evolving_framework import QueriedKnowledge
 from rdagent.core.experiment import FBWorkspace, Task
-from rdagent.oai.llm_utils import APIBackend
 from rdagent.utils.agent.tpl import T
 from rdagent.utils.agent.workflow import build_cls_from_json_with_retry
-from rdagent.utils.env import DockerEnv, DSDockerConf, MLEBDockerConf
 
 DIRNAME = Path(__file__).absolute().resolve().parent
 
@@ -54,12 +53,8 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
                 final_decision=False,
             )
 
-        # DockerEnv for Kaggle Competition
-        ds_docker_conf = DSDockerConf()
-        ds_docker_conf.extra_volumes = {
-            f"{DS_RD_SETTING.local_data_path}/sample/{self.scen.competition}": "/kaggle/input"
-        }
-        de = DockerEnv(conf=ds_docker_conf)
+        env = get_ds_env()
+        env.conf.extra_volumes = {f"{DS_RD_SETTING.local_data_path}/sample/{self.scen.competition}": "/kaggle/input"}
 
         # # DockerEnv for MLEBench submission validation
         # mle_de_conf = MLEBDockerConf()
@@ -70,9 +65,9 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
         # mde.prepare()
 
         # Clean the scores.csv & submission.csv.
-        implementation.execute(env=de, entry=f"rm submission.csv scores.csv")
+        implementation.execute(env=env, entry=f"rm submission.csv scores.csv")
 
-        stdout = implementation.execute(env=de, entry=f"python main.py")
+        stdout = implementation.execute(env=env, entry=f"python main.py")
         stdout = re.sub(r"=== Start of EDA part ===(.*)=== End of EDA part ===", "", stdout)
 
         # Check score file
@@ -89,12 +84,11 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
                 model_set_in_folder = set(
                     f[:-3] for f in implementation.file_dict.keys() if re.match(r"^model_(?!test)\w+\.py$", f)
                 )
-                for model in model_set_in_folder:
-                    if model not in model_set_in_scores:
-                        score_check_text += f"\nModel {model} is not evaluated in the scores.csv. The scores.csv has {model_set_in_scores}."
-                        score_ret_code = 1
+                if model_set_in_scores != model_set_in_folder.union({"ensemble"}):
+                    score_check_text += f"\n[Error] The scores dataframe does not contain the correct model names as index.\ncorrect model names are: {model_set_in_folder.union({'ensemble'})}\nscore_df is:\n{score_df}"
+                    score_ret_code = 1
             except Exception as e:
-                score_check_text += f"\nError in checking the scores.csv file: {e}\nscores.csv's content:\n-----\n{score_fp.read_text()}\n-----"
+                score_check_text += f"\n[Error] in checking the scores.csv file: {e}\nscores.csv's content:\n-----\n{score_fp.read_text()}\n-----"
                 score_ret_code = 1
 
         # Check submission file
@@ -102,7 +96,7 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
         implementation.inject_files(**{"test/submission_format_test.py": base_check_code})
         # stdout += "----Submission Check 1-----\n"
         submission_check_out, submission_ret_code = implementation.execute_ret_code(
-            env=de, entry="python test/submission_format_test.py"
+            env=env, entry="python test/submission_format_test.py"
         )
         stdout += "\n" + submission_check_out
 

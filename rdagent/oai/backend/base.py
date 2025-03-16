@@ -242,6 +242,17 @@ class APIBackend(ABC):
         )
         return messages
 
+    def _build_log_messages(self, messages: list[dict[str, Any]]) -> str:
+        log_messages = ""
+        for m in messages:
+            log_messages += (
+                f"\n{LogColors.MAGENTA}{LogColors.BOLD}Role:{LogColors.END}"
+                f"{LogColors.CYAN}{m['role']}{LogColors.END}\n"
+                f"{LogColors.MAGENTA}{LogColors.BOLD}Content:{LogColors.END} "
+                f"{LogColors.CYAN}{m['content']}{LogColors.END}\n"
+            )
+        return log_messages
+
     def build_messages_and_create_chat_completion(  # type: ignore[no-untyped-def]
         self,
         user_prompt: str,
@@ -273,7 +284,7 @@ class APIBackend(ABC):
         logger.log_object({"system": system_prompt, "user": user_prompt, "resp": resp}, tag="debug_llm")
         return resp
 
-    def create_embedding(self, input_content: str | list[str], *args, **kwargs) -> list[list[float]]:  # type: ignore[no-untyped-def]
+    def create_embedding(self, input_content: str | list[str], *args, **kwargs) -> list[float] | list[list[float]]:  # type: ignore[no-untyped-def]
         input_content_list = [input_content] if isinstance(input_content, str) else input_content
         resp = self._try_create_chat_completion_or_embedding(  # type: ignore[misc]
             input_content_list=input_content_list,
@@ -281,6 +292,8 @@ class APIBackend(ABC):
             *args,
             **kwargs,
         )
+        if isinstance(input_content, str):
+            return resp[0]  # type: ignore[return-value]
         return resp  # type: ignore[return-value]
 
     def build_messages_and_calculate_token(
