@@ -7,6 +7,7 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -15,8 +16,16 @@ from pydantic import TypeAdapter
 from rdagent.core.utils import LLM_CACHE_SEED_GEN, SingletonBaseClass
 from rdagent.log import LogColors
 from rdagent.log import rdagent_logger as logger
+from rdagent.log.timer import RD_Agent_TIMER_wrapper
 from rdagent.oai.llm_conf import LLM_SETTINGS
 from rdagent.utils import md5_hash
+
+try:
+    import openai
+
+    openai_imported = True
+except ImportError:
+    openai_imported = False
 
 
 class SQliteLazyCache(SingletonBaseClass):
@@ -321,7 +330,9 @@ class APIBackend(ABC):
     ) -> str | list[list[float]]:
         assert not (chat_completion and embedding), "chat_completion and embedding cannot be True at the same time"
         max_retry = LLM_SETTINGS.max_retry if LLM_SETTINGS.max_retry is not None else max_retry
+        timeout_count = 0
         for i in range(max_retry):
+            API_start_time = datetime.now()
             try:
                 if embedding:
                     return self._create_embedding_with_cache(*args, **kwargs)
@@ -337,8 +348,24 @@ class APIBackend(ABC):
                     kwargs["input_content_list"] = [
                         content[: len(content) // 2] for content in kwargs.get("input_content_list", [])
                     ]
+                elif (
+                    openai_imported
+                    and isinstance(e, openai.APITimeoutError)
+                    or (
+                        isinstance(e, openai.APIError)
+                        and hasattr(e, "message")
+                        and "Your resource has been temporarily blocked because we detected behavior that may violate our content policy."
+                        in e.message
+                    )
+                ):
+                    timeout_count += 1
+                    if timeout_count >= 3:
+                        logger.warning("Timeout error, please check your network connection.")
+                        raise e
                 else:
                     time.sleep(self.retry_wait_seconds)
+                    if RD_Agent_TIMER_wrapper.timer.started and not isinstance(e, json.decoder.JSONDecodeError):
+                        RD_Agent_TIMER_wrapper.timer.add_duration(datetime.now() - API_start_time)
                 logger.warning(str(e))
                 logger.warning(f"Retrying {i+1}th time...")
         error_message = f"Failed to create chat completion after {max_retry} retries."

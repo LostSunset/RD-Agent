@@ -8,6 +8,7 @@ from rdagent.components.coder.CoSTEER.evaluators import (
     CoSTEERSingleFeedback,
 )
 from rdagent.components.coder.data_science.conf import get_ds_env
+from rdagent.components.coder.data_science.utils import remove_eda_part
 from rdagent.core.evolving_framework import QueriedKnowledge
 from rdagent.core.experiment import FBWorkspace, Task
 from rdagent.utils.agent.tpl import T
@@ -43,7 +44,11 @@ class FeatureCoSTEEREvaluator(CoSTEEREvaluator):
             )
 
         env = get_ds_env(
-            extra_volumes={f"{DS_RD_SETTING.local_data_path}/sample/{self.scen.competition}": "/kaggle/input"}
+            extra_volumes={
+                f"{DS_RD_SETTING.local_data_path}/sample/{self.scen.competition}": T(
+                    "scenarios.data_science.share:scen.input_path"
+                ).r()
+            }
         )
 
         # TODO: do we need to clean the generated temporary content?
@@ -55,7 +60,7 @@ class FeatureCoSTEEREvaluator(CoSTEEREvaluator):
 
         if "main.py" in implementation.file_dict and ret_code == 0:
             workflow_stdout = implementation.execute(env=env, entry="python main.py")
-            workflow_stdout = re.sub(r"=== Start of EDA part ===(.*)=== End of EDA part ===", "", workflow_stdout)
+            workflow_stdout = remove_eda_part(workflow_stdout)
         else:
             workflow_stdout = None
 

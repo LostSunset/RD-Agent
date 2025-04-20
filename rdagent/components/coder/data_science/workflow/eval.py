@@ -11,6 +11,7 @@ from rdagent.components.coder.CoSTEER.evaluators import (
     CoSTEERSingleFeedback,
 )
 from rdagent.components.coder.data_science.conf import get_clear_ws_cmd, get_ds_env
+from rdagent.components.coder.data_science.utils import remove_eda_part
 from rdagent.core.evolving_framework import QueriedKnowledge
 from rdagent.core.experiment import FBWorkspace, Task
 from rdagent.log import rdagent_logger as logger
@@ -55,7 +56,11 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
             )
 
         env = get_ds_env(
-            extra_volumes={f"{DS_RD_SETTING.local_data_path}/sample/{self.scen.competition}": "/kaggle/input"}
+            extra_volumes={
+                f"{DS_RD_SETTING.local_data_path}/sample/{self.scen.competition}": T(
+                    "scenarios.data_science.share:scen.input_path"
+                ).r()
+            }
         )
 
         # # DockerEnv for MLEBench submission validation
@@ -72,7 +77,7 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
         stdout = implementation.execute(env=env, entry=f"python -m coverage run main.py")
 
         # remove EDA part
-        stdout = re.sub(r"=== Start of EDA part ===(.*)=== End of EDA part ===", "", stdout)
+        stdout = remove_eda_part(stdout)
 
         # Check score file
         score_fp = implementation.workspace_path / "scores.csv"
@@ -119,7 +124,7 @@ class WorkflowGeneralCaseSpecEvaluator(CoSTEEREvaluator):
                 score_ret_code = 1
 
         # Check submission file
-        base_check_code = (DIRNAME / "eval_tests" / "submission_format_test.txt").read_text()
+        base_check_code = T(".eval_tests.submission_format_test", ftype="txt").r()
         implementation.inject_files(**{"test/submission_format_test.py": base_check_code})
         # stdout += "----Submission Check 1-----\n"
         submission_check_out, submission_ret_code = implementation.execute_ret_code(

@@ -8,12 +8,14 @@ from rdagent.core.experiment import FBWorkspace
 from rdagent.core.scenario import Scenario
 from rdagent.log import rdagent_logger as logger
 from rdagent.oai.llm_utils import APIBackend
+from rdagent.scenarios.data_science.debug.data import create_debug_data
 from rdagent.scenarios.data_science.scen.utils import (
     describe_data_folder,
     describe_data_folder_v2,
 )
 from rdagent.scenarios.kaggle.kaggle_crawler import (
     crawl_descriptions,
+    download_data,
     leaderboard_scores,
 )
 from rdagent.utils.agent.tpl import T
@@ -23,6 +25,17 @@ class DataScienceScen(Scenario):
     """Data Science Scenario"""
 
     def __init__(self, competition: str) -> None:
+
+        # 1) prepare data
+        if not Path(f"{DS_RD_SETTING.local_data_path}/{competition}").exists():
+            logger.error(f"Please prepare data for competition {competition} first.")
+            raise FileNotFoundError(f"Cannot find {competition} in {DS_RD_SETTING.local_data_path}")
+
+        local_path = DS_RD_SETTING.local_data_path
+        if not Path(f"{local_path}/sample/{competition}").exists():
+            create_debug_data(competition, dataset_path=local_path)
+
+        # 2) collect information of competition.
         self.metric_name: str | None = (
             None  # It is None when initialization. After analysing, we'll assign the metric name
         )
@@ -31,16 +44,20 @@ class DataScienceScen(Scenario):
         self.raw_description = self._get_description()
         self.processed_data_folder_description = self._get_data_folder_description()
         self._analysis_competition_description()
-        self.metric_direction = self._get_direction()
+        self.metric_direction: bool = (
+            self._get_direction()
+        )  # True indicates higher is better, False indicates lower is better
 
     def _get_description(self):
-        if (fp := Path(f"{DS_RD_SETTING.local_data_path}/{self.competition}.json")).exists():
+        if (fp := Path(f"{DS_RD_SETTING.local_data_path}/{self.competition}/description.md")).exists():
+            return fp.read_text()
+        elif (fp := Path(f"{DS_RD_SETTING.local_data_path}/{self.competition}.json")).exists():
             logger.info(f"Found {self.competition}.json, loading from local file.")
             with fp.open("r") as f:
                 return json.load(f)
         else:
             logger.error(
-                f"Cannot find {self.competition}.json in {DS_RD_SETTING.local_data_path}, please check the file."
+                f"Cannot find '{self.competition}.json' in {DS_RD_SETTING.local_data_path} or 'description.md' file, please check the file."
             )
 
     def _get_direction(self):
@@ -75,17 +92,6 @@ class DataScienceScen(Scenario):
         self.metric_name = response_json_analysis.get("Metric Name", "custom_metric")
         self.metric_direction_guess = response_json_analysis.get("Metric Direction", True)
 
-    def get_competition_full_desc(self) -> str:
-        return f"""Task Type: {self.task_type}
-    Data Type: {self.data_type}
-    Brief Description: {self.brief_description}
-    Dataset Description: {self.dataset_description}
-    Submission Specifications: {self.submission_specifications}
-    Model Output Channel: {self.model_output_channel}
-    Metric Evaluation Description: {self.metric_description}
-    Metric Name: {self.metric_name}
-    """
-
     @property
     def background(self) -> str:
         background_template = T(".prompts:competition_background")
@@ -94,6 +100,7 @@ class DataScienceScen(Scenario):
             data_type=self.data_type,
             brief_description=self.brief_description,
             dataset_description=self.dataset_description,
+            model_output_channel=self.model_output_channel,
             metric_description=self.metric_description,
         )
         return background_prompt
@@ -103,6 +110,17 @@ class DataScienceScen(Scenario):
         return T(".prompts:rich_style_description").r(
             name="Data Science",
             competition=self.competition,
+        )
+
+    def get_competition_full_desc(self) -> str:
+        return T(".prompts:scenario_description").r(
+            background=self.background,
+            submission_specifications=self.submission_specifications,
+            evaluation=self.metric_description,
+            metric_name=self.metric_name,
+            metric_direction=self.metric_direction,
+            time_limit=None,
+            eda_output=None,
         )
 
     def get_scenario_all_desc(self, eda_output=None) -> str:
@@ -143,12 +161,16 @@ class KaggleScen(DataScienceScen):
           So we start from a simple one....
     """
 
+    def __init__(self, competition: str) -> None:
+        download_data(competition=competition, settings=DS_RD_SETTING, enable_create_debug_data=False)
+        super().__init__(competition)
+
     def _get_description(self):
         return crawl_descriptions(self.competition, DS_RD_SETTING.local_data_path)
 
     def _get_direction(self):
         leaderboard = leaderboard_scores(self.competition)
-        return "maximize" if float(leaderboard[0]) > float(leaderboard[-1]) else "minimize"
+        return float(leaderboard[0]) > float(leaderboard[-1])
 
     @property
     def rich_style_description(self) -> str:
