@@ -12,7 +12,7 @@ class DSHypothesis(Hypothesis):
     def __init__(
         self,
         component: COMPONENT,
-        hypothesis: str = "",
+        hypothesis: str | None = None,
         reason: str | None = None,
         concise_reason: str | None = None,
         concise_observation: str | None = None,
@@ -31,15 +31,18 @@ class DSHypothesis(Hypothesis):
         self.problem_label = problem_label
 
     def __str__(self) -> str:
-        if self.hypothesis == "":
+        if self.hypothesis is None:
             return f"No hypothesis available. Trying to construct the first runnable {self.component} component."
+
         lines = []
-        if self.problem_name is not None and self.problem_desc is not None:
-            lines.append(f"Target Problem name: {self.problem_name}")
+        if self.problem_name is not None:
+            lines.append(f"Target Problem Name: {self.problem_name}")
+        if self.problem_desc is not None:
             lines.append(f"Target Problem: {self.problem_desc}")
-        lines.extend(
-            [f"Chosen Component: {self.component}", f"Hypothesis: {self.hypothesis}", f"Reason: {self.reason}"]
-        )
+        lines.append(f"Chosen Component: {self.component}")
+        lines.append(f"Hypothesis: {self.hypothesis}")
+        if self.reason is not None:
+            lines.append(f"Reason: {self.reason}")
         return "\n".join(lines)
 
 
@@ -58,9 +61,16 @@ class DSTrace(Trace[DataScienceScen, KnowledgeBase]):
 
         self.knowledge_base = knowledge_base
 
+        self.sub_trace_count: int = 0
+
         self.current_selection: tuple[int, ...] = (-1,)
 
+        self.sota_exp_to_submit: DSExperiment | None = None  # grab the global best exp to submit
+
     COMPLETE_ORDER = ("DataLoadSpec", "FeatureEng", "Model", "Ensemble", "Workflow")
+
+    def set_sota_exp_to_submit(self, exp: DSExperiment) -> None:
+        self.sota_exp_to_submit = exp
 
     def get_current_selection(self) -> tuple[int, ...]:
         return self.current_selection
@@ -124,15 +134,22 @@ class DSTrace(Trace[DataScienceScen, KnowledgeBase]):
         list[tuple[DSExperiment, ExperimentFeedback]]
             The search list.
         """
+        if search_type == "all":
+            return self.hist
 
-        if selection is None:
-            selection = self.get_current_selection()
+        elif search_type == "ancestors":
 
-        if selection is None:
-            # selection is None, which means we switch to a new trace, which is not implemented yet
-            return []
+            if selection is None:
+                selection = self.get_current_selection()
 
-        return self.collect_all_ancestors(selection) if search_type == "ancestors" else self.hist
+            if len(selection) == 0:
+                # selection is (), which means we switch to a new trace
+                return []
+
+            return self.collect_all_ancestors(selection)
+
+        else:
+            raise ValueError(f"Invalid search type: {search_type}")
 
     def collect_all_ancestors(
         self,
@@ -203,24 +220,31 @@ class DSTrace(Trace[DataScienceScen, KnowledgeBase]):
 
         final_component = self.COMPLETE_ORDER[-1]
         has_final_component = True if DS_RD_SETTING.coder_on_whole_pipeline else False
-        exp_and_feedback_list = []
+        SOTA_exp_and_feedback_list = []
+        failed_exp_and_feedback_list = []
         for exp, fb in search_list:
             if has_final_component:
-                if return_type == "all":
-                    exp_and_feedback_list.append((exp, fb))
-                elif return_type == "failed" and not fb.decision:
-                    exp_and_feedback_list.append((exp, fb))
-                elif return_type == "sota" and fb.decision:
-                    exp_and_feedback_list.append((exp, fb))
+                if fb.decision:
+                    SOTA_exp_and_feedback_list.append((exp, fb))
+                    failed_exp_and_feedback_list = []
+                else:
+                    failed_exp_and_feedback_list.append((exp, fb))
             if exp.hypothesis.component == final_component and fb:
                 has_final_component = True
-        return exp_and_feedback_list
+        if return_type == "all":
+            return SOTA_exp_and_feedback_list + failed_exp_and_feedback_list
+        elif return_type == "failed":
+            return failed_exp_and_feedback_list
+        elif return_type == "sota":
+            return SOTA_exp_and_feedback_list
+        else:
+            raise ValueError("Invalid return_type. Must be 'sota', 'failed', or 'all'.")
 
-    def sota_experiment(
+    def sota_experiment_fb(
         self,
         search_type: Literal["all", "ancestors"] = "ancestors",
         selection: tuple[int, ...] | None = None,
-    ) -> DSExperiment | None:
+    ) -> tuple[DSExperiment, ExperimentFeedback] | None:
         """
 
         Returns
@@ -234,8 +258,18 @@ class DSTrace(Trace[DataScienceScen, KnowledgeBase]):
             for exp, ef in search_list[::-1]:
                 # the sota exp should be accepted decision and all required components are completed.
                 if ef.decision:
-                    return exp
+                    return exp, ef
         return None
+
+    def sota_experiment(
+        self,
+        search_type: Literal["all", "ancestors"] = "ancestors",
+        selection: tuple[int, ...] | None = None,
+    ) -> DSExperiment | None:
+        res = self.sota_experiment_fb(search_type=search_type, selection=selection)
+        if res is not None:
+            res = res[0]
+        return res
 
     def last_successful_exp(
         self,
