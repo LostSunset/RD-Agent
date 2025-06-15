@@ -151,41 +151,46 @@ Ensure the current user can run Docker commands **without using sudo**. You can 
   - json_mode
   - embedding query
 
-- For example: If you are using the `OpenAI API`, you have to configure your GPT model in the `.env` file like this.
+  You can set your Chat Model and Embedding Model in the following ways:
+
+- **Using LiteLLM (Default)**: We now support LiteLLM as a backend for integration with multiple LLM providers. You can configure in two ways:
+
+  **Option 1: Unified API base for both models**
   ```bash
   cat << EOF  > .env
-  OPENAI_API_KEY=<replace_with_your_openai_api_key>
-  # EMBEDDING_MODEL=text-embedding-3-small
-  CHAT_MODEL=gpt-4-turbo
-  EOF
-  ```
-- However, not every API services support these features by default. For example: `AZURE OpenAI`, you have to configure your GPT model in the `.env` file like this.
-  ```bash
-  cat << EOF  > .env
-  USE_AZURE=True
-  EMBEDDING_OPENAI_API_KEY=<replace_with_your_azure_openai_api_key>
-  EMBEDDING_AZURE_API_BASE=<replace_with_your_azure_endpoint>
-  EMBEDDING_AZURE_API_VERSION=<replace_with_the_version_of_your_azure_openai_api>
+  # Set to any model supported by LiteLLM.
+  CHAT_MODEL=gpt-4o 
   EMBEDDING_MODEL=text-embedding-3-small
-  CHAT_OPENAI_API_KEY=<replace_with_your_azure_openai_api_key>
-  CHAT_AZURE_API_BASE=<replace_with_your_azure_endpoint>
-  CHAT_AZURE_API_VERSION=<replace_with_the_version_of_your_azure_openai_api>
-  CHAT_MODEL=<replace_it_with_the_name_of_your_azure_chat_model>
-  EOF
+  # Configure unified API base
+  OPENAI_API_BASE=<your_unified_api_base>
+  OPENAI_API_KEY=<replace_with_your_openai_api_key>
   ```
 
-- We now support LiteLLM as a backend for integration with multiple LLM providers. If you use LiteLLM Backend to use models, you can configure as follows:
+  **Option 2: Separate API bases for Chat and Embedding models**
   ```bash
   cat << EOF  > .env
-  BACKEND=rdagent.oai.backend.LiteLLMAPIBackend
-  # It can be modified to any model supported by LiteLLM.
-  CHAT_MODEL=gpt-4o
-  EMBEDDING_MODEL=text-embedding-3-small
-  # The backend api_key fully follow the convention of litellm.
-  OPENAI_API_KEY=<replace_with_your_openai_api_key>
-  ```
+  # Set to any model supported by LiteLLM.
+  # Configure separate API bases for chat and embedding
   
-- For more configuration information, please refer to the [documentation](https://rdagent.readthedocs.io/en/latest/installation_and_configuration.html).
+  # CHAT MODEL:
+  CHAT_MODEL=gpt-4o 
+  OPENAI_API_BASE=<your_chat_api_base>
+  OPENAI_API_KEY=<replace_with_your_openai_api_key>
+
+  # EMBEDDING MODEL:
+  # TAKE siliconflow as an example, you can use other providers.
+  # Note: embedding requires litellm_proxy prefix
+  EMBEDDING_MODEL=litellm_proxy/BAAI/bge-large-en-v1.5
+  LITELLM_PROXY_API_KEY=<replace_with_your_siliconflow_api_key>
+  LITELLM_PROXY_API_BASE=https://api.siliconflow.cn/v1
+  ```
+
+  Notice: If you are using reasoning models that include thought processes in their responses (such as \<think> tags), you need to set the following environment variable:
+  ```bash
+  REASONING_THINK_RM=True
+  ```
+
+- You can also use a deprecated backend if you only use `OpenAI API` or `Azure OpenAI` directly. For this deprecated setting and more configuration information, please refer to the [documentation](https://rdagent.readthedocs.io/en/latest/installation_and_configuration.html).
 
 ### 🚀 Run the Application
 
