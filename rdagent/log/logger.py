@@ -106,15 +106,13 @@ class RDAgentLog(SingletonBaseClass):
         return pid_chain
 
     def log_object(self, obj: object, *, tag: str = "") -> None:
-        caller_info = get_caller_info()
         tag = f"{self._tag}.{tag}.{self.get_pids()}".strip(".")
 
         for storage in [self.storage] + self.other_storages:
-            logp = storage.log(obj, tag=tag)
-            logger.patch(lambda r: r.update(caller_info)).info(f"Log object to [{storage}], uri: {logp}")
+            storage.log(obj, tag=tag)
 
     def _log(self, level: str, msg: str, *, tag: str = "", raw: bool = False) -> None:
-        caller_info = get_caller_info()
+        caller_info = get_caller_info(level=3)
         tag = f"{self._tag}.{tag}.{self.get_pids()}".strip(".")
 
         if raw:
