@@ -34,12 +34,9 @@ class ParallelMultiTraceExpGen(ExpGen):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # The underlying generator for creating a single experiment
-        self.exp_gen = DataScienceRDLoop._get_exp_gen(
-            "rdagent.scenarios.data_science.proposal.exp_gen.DSExpGen", self.scen
-        )
+        self.exp_gen = DataScienceRDLoop.default_exp_gen(self.scen)
         self.merge_exp_gen = ExpGen2Hypothesis(self.scen)
-        self.trace_scheduler: TraceScheduler = RoundRobinScheduler()
-        self.max_trace_num = DS_RD_SETTING.max_trace_num
+        self.trace_scheduler: TraceScheduler = RoundRobinScheduler(DS_RD_SETTING.max_trace_num)
 
     def gen(self, trace: "DSTrace") -> "Experiment":
         raise NotImplementedError(
@@ -53,12 +50,12 @@ class ParallelMultiTraceExpGen(ExpGen):
         into it before returning.
         """
         timer: RDAgentTimer = RD_Agent_TIMER_wrapper.timer
-        logger.info(f"Remain time: {timer.remain_time_duration}")
+        logger.info(f"Remain time: {timer.remain_time()}")
         local_selection: tuple[int, ...] = None
 
         while True:
 
-            if timer.remain_time_duration >= timedelta(hours=DS_RD_SETTING.merge_hours):
+            if timer.remain_time() >= timedelta(hours=DS_RD_SETTING.merge_hours):
 
                 if DS_RD_SETTING.enable_inject_knowledge_at_root:
 
@@ -69,15 +66,9 @@ class ParallelMultiTraceExpGen(ExpGen):
                     else:
                         # set the knowledge base option back to False for the other traces
                         DS_RD_SETTING.enable_knowledge_base = False
-                # step 1: select the parant trace to expand
-                # Policy: if we have fewer traces than our target, start a new one.
-                if trace.sub_trace_count < self.max_trace_num:
-                    local_selection = trace.NEW_ROOT
-                else:
-                    # Otherwise, use the scheduler to pick an existing trace to expand.
-                    local_selection = await self.trace_scheduler.select_trace(trace)
 
                 if loop.get_unfinished_loop_cnt(loop.loop_idx) < RD_AGENT_SETTINGS.get_max_parallel():
+                    local_selection = await self.trace_scheduler.next(trace)
 
                     # set the local selection as the global current selection for the trace
                     trace.set_current_selection(local_selection)
@@ -104,8 +95,10 @@ class ParallelMultiTraceExpGen(ExpGen):
                     else:
                         selection = (leaves[0],)
                         if trace.sota_exp_to_submit is not None:
-                            if trace.is_parent(trace.exp2idx(trace.sota_exp_to_submit), leaves[1]):
-                                selection = (leaves[1],)
+                            for i in range(1, len(leaves)):
+                                if trace.is_parent(trace.exp2idx(trace.sota_exp_to_submit), leaves[i]):
+                                    selection = (leaves[i],)
+                                    break
                         trace.set_current_selection(selection)
                         return self.merge_exp_gen.gen(trace)
 
